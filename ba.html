@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <title>Rezervări (App complet + Login)</title>
+
+  <!-- SheetJS pentru export Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Chart.js pentru grafice -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .hidden { display: none; }
+    input, button, select { padding: 6px; margin: 4px; }
+    button { cursor: pointer; }
+    #app { max-width: 1100px; margin: 0 auto; }
+    header { display:flex; justify-content:space-between; align-items:center; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    ul { list-style-type: disc; padding-left: 20px; }
+    table { width:100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border:1px solid #ccc; padding:6px; text-align:center; }
+    th { background:#f2f2f2; }
+    tr:hover { background:#fafafa; }
+    .small { font-size:0.9rem; color:#444; }
+    .danger { background:crimson; color:white; border:none; padding:6px 8px; border-radius:4px; }
+    .muted { color:#666; font-size:0.9rem; }
+    #stats { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }
+    .card { border:1px solid #ddd; padding:10px; border-radius:6px; min-width:160px; background:#fff; box-shadow: 0 1px 2px rgba(0,0,0,0.03);}
+  </style>
+</head>
+<body>
+  <!-- ========== LOGIN VIEW ========== -->
+  <div id="loginView">
+    <h2>Conectare / Creare cont (demo local)</h2>
+    <div class="row">
+      <input id="loginUser" placeholder="Username">
+      <input id="loginPass" placeholder="Parolă" type="password">
+      <button onclick="login()">Login</button>
+      <button onclick="createAccount()">Creează cont</button>
+    </div>
+    <p class="muted">Datele sunt stocate **local** în browser. Pentru demo - parolă stocată în clar în localStorage (nu folosi în producție).</p>
+  </div>
+
+  <!-- ========== APP VIEW ========== -->
+  <div id="app" class="hidden">
+    <header>
+      <div>
+        <h1>Rezervări — <span id="userLabel"></span></h1>
+        <div class="muted">Aplicație demo: Login local + salvare per user</div>
+      </div>
+      <div class="row">
+        <button onclick="logout()">Logout</button>
+        <button onclick="stergeRaport()">Șterge Raport Rezervări</button>
+        <button onclick="exportExcel()">Exportă în Excel</button>
+      </div>
+    </header>
+
+    <hr>
+
+    <!-- DENUMIRI -->
+    <section>
+      <h2>Adaugă denumiri (rute)</h2>
+      <div class="row">
+        <input id="denumireInput" placeholder="Scrie o denumire...">
+        <button onclick="adaugaDenumire()">Adaugă</button>
+        <button onclick="alegeRandom()">Alege denumire aleatoriu</button>
+        <button onclick="stergeTot()">Șterge toate denumirile</button>
+      </div>
+      <h3>Lista denumiri:</h3>
+      <ul id="lista"></ul>
+      <div id="random" class="small"></div>
+    </section>
+
+    <hr>
+
+    <!-- PASAGERI / DATE / PRET -->
+    <section>
+      <div style="display:flex;gap:30px;flex-wrap:wrap;">
+        <div>
+          <h3>Număr pasageri</h3>
+          <div class="row">
+            <label>De la:</label><input id="minPasageri" type="number" value="1" style="width:80px;">
+            <label>Până la:</label><input id="maxPasageri" type="number" value="10" style="width:80px;">
+            <button onclick="alegeRandomPasageri()">Alege număr pasageri</button>
+          </div>
+          <div id="randomPasageri" class="small"></div>
+        </div>
+
+        <div>
+          <h3>Interval de date</h3>
+          <div class="row">
+            <label>De la:</label><input id="dataStart" type="date">
+            <label>Până la:</label><input id="dataEnd" type="date">
+            <button onclick="alegeRandomData()">Alege o dată</button>
+          </div>
+          <div id="randomData" class="small"></div>
+        </div>
+
+        <div>
+          <h3>Variație preț</h3>
+          <div class="row">
+            <label>Preț inițial:</label><input id="pretInitial" type="number" value="100" style="width:100px;">
+            <label>Min %:</label><input id="variatieMin" type="number" value="-20" style="width:80px;">
+            <label>Max %:</label><input id="variatieMax" type="number" value="30" style="width:80px;">
+            <button onclick="calculeazaPret()">Calculează preț final</button>
+          </div>
+          <div id="randomPret" class="small" style="white-space:pre-line;"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <button onclick="calculeazaTotal()">Calculează preț final × număr pasageri</button>
+        <button onclick="adaugaRand()">Adaugă rând (folosește ultimele valori generate / sau completează manual)</button>
+        <div id="totalFinal" class="small" style="white-space:pre-line;margin-top:8px;"></div>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- FILTRARE -->
+    <section>
+      <h2>Filtrare & căutare</h2>
+      <div class="row">
+        <input id="filterDenumire" placeholder="Caută după denumire/rută" oninput="aplicaFiltre()">
+        <label>De la data:</label><input id="filterDataStart" type="date" onchange="aplicaFiltre()">
+        <label>Până la data:</label><input id="filterDataEnd" type="date" onchange="aplicaFiltre()">
+        <label>Preț min:</label><input id="filterPretMin" type="number" oninput="aplicaFiltre()">
+        <label>Preț max:</label><input id="filterPretMax" type="number" oninput="aplicaFiltre()">
+        <button onclick="resetFiltre()">Reset filtre</button>
+        <button onclick="toggleSortData()">Sortează după dată ↑/↓</button>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- TABEL -->
+    <section>
+      <h2>Raport rezervări</h2>
+      <table id="tabelRezervari">
+        <thead>
+          <tr>
+            <th>Denumire</th>
+            <th>Pasageri</th>
+            <th>Data</th>
+            <th>Preț/pasager</th>
+            <th>Cost total</th>
+            <th>Acțiuni</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <hr>
+
+    <!-- STATISTICI -->
+    <section>
+      <h2>Statistici</h2>
+      <div id="stats">
+        <div class="card"><div class="small">Rezervări totale</div><div id="statCount" style="font-weight:700;font-size:1.2rem">0</div></div>
+        <div class="card"><div class="small">Total pasageri</div><div id="statPas" style="font-weight:700;font-size:1.2rem">0</div></div>
+        <div class="card"><div class="small">Venit total</div><div id="statVenit" style="font-weight:700;font-size:1.2rem">0 RON</div></div>
+        <div class="card"><div class="small">Preț mediu/pasager</div><div id="statPretMed" style="font-weight:700;font-size:1.2rem">0 RON</div></div>
+        <div class="card"><div class="small">Pasageri medii/rezerv.</div><div id="statPasMed" style="font-weight:700;font-size:1.2rem">0</div></div>
+        <div class="card"><div class="small">Cea mai scumpă rezervare</div><div id="statMax" style="font-weight:700;font-size:1.0rem">-</div></div>
+      </div>
+
+      <div style="margin-top:18px;">
+        <canvas id="chartRez" height="120"></canvas>
+      </div>
+    </section>
+
+    <hr>
+    <div class="muted">Notă: toate datele sunt stocate local per utilizator. Date sensibile nu trebuie stocate astfel în medii reale.</div>
+    <br/>
+  </div>
+
+<script>
+/* ---------- Helper: per-user storage ---------- */
+function currentUserKey(k) {
+  const u = localStorage.getItem('currentUser');
+  return u ? `${k}__${u}` : `${k}__guest`;
+}
+function loadJSON(key, fallback) {
+  return JSON.parse(localStorage.getItem(currentUserKey(key)) || JSON.stringify(fallback));
+}
+function saveJSON(key, obj) {
+  localStorage.setItem(currentUserKey(key), JSON.stringify(obj));
+}
+
+/* ---------- Auth (very simple demo) ---------- */
+function showLogin(show) {
+  document.getElementById('loginView').style.display = show ? 'block' : 'none';
+  document.getElementById('app').style.display = show ? 'none' : 'block';
+}
+function createAccount() {
+  const user = document.getElementById('loginUser').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if(!user || !pass){ alert('Completează username și parolă.'); return; }
+  let users = JSON.parse(localStorage.getItem('demo_users') || '[]');
+  if(users.find(u=>u.user===user)){ alert('Username deja existent. Alege altul.'); return; }
+  users.push({user, pass});
+  localStorage.setItem('demo_users', JSON.stringify(users));
+  alert('Cont creat. Acum te poți loga.');
+}
+function login() {
+  const user = document.getElementById('loginUser').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if(!user || !pass){ alert('Completează username și parolă.'); return; }
+  let users = JSON.parse(localStorage.getItem('demo_users') || '[]');
+  const found = users.find(u=>u.user===user && u.pass===pass);
+  if(!found){ alert('Credentiale incorecte.'); return; }
+  localStorage.setItem('currentUser', user);
+  initForUser();
+}
+function logout(){
+  localStorage.removeItem('currentUser');
+  location.reload();
+}
+
+/* ---------- Load per-user app state ---------- */
+let denumiri = [];     // loaded per user
+let rezervari = [];    // loaded per user
+let ultimulPretFinal = null;
+let ultimulNumarPasageri = null;
+let ultimaData = null;
+let ultimaDenumire = null;
+let sortAsc = true;
+let chart = null;
+
+function initForUser(){
+  const user = localStorage.getItem('currentUser');
+  if(!user){ showLogin(true); return; }
+  showLogin(false);
+  document.getElementById('userLabel').innerText = user;
+  denumiri = loadJSON('denumiri', []);
+  rezervari = loadJSON('rezervari', []);
+  afiseazaLista();
+  aplicaFiltre(); // will render table
+  updateStatsAndChart();
+}
+
+/* ---------- Denumiri ---------- */
+function afiseazaLista(){
+  const ul = document.getElementById('lista'); ul.innerHTML='';
+  denumiri.forEach((d,i)=>{
+    const li=document.createElement('li');
+    li.textContent = d + ' ';
+    const btn = document.createElement('button');
+    btn.textContent = 'Șterge'; btn.className='sterge';
+    btn.onclick = ()=>{ denumiri.splice(i,1); saveJSON('denumiri', denumiri); afiseazaLista(); };
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+}
+function adaugaDenumire(){
+  const v = document.getElementById('denumireInput').value.trim();
+  if(!v) return;
+  denumiri.push(v);
+  saveJSON('denumiri', denumiri);
+  document.getElementById('denumireInput').value='';
+  afiseazaLista();
+}
+function alegeRandom(){
+  if(denumiri.length===0){ document.getElementById('random').innerText='Nu există denumiri.'; return; }
+  ultimaDenumire = denumiri[Math.floor(Math.random()*denumiri.length)];
+  document.getElementById('random').innerText = 'Denumirea aleasă: ' + ultimaDenumire;
+}
+function stergeTot(){
+  if(!confirm('Ștergi toate denumirile?')) return;
+  denumiri = []; saveJSON('denumiri', denumiri); afiseazaLista();
+}
+
+/* ---------- Pasageri / Date / Pret ---------- */
+function alegeRandomPasageri(){
+  let min = parseInt(document.getElementById('minPasageri').value);
+  let max = parseInt(document.getElementById('maxPasageri').value);
+  if(isNaN(min)||isNaN(max)||min>max){ document.getElementById('randomPasageri').innerText='⚠️ Interval invalid!'; return; }
+  ultimulNumarPasageri = Math.floor(Math.random()*(max-min+1))+min;
+  document.getElementById('randomPasageri').innerText = 'Număr pasageri ales: ' + ultimulNumarPasageri;
+}
+function alegeRandomData(){
+  let s = document.getElementById('dataStart').value;
+  let e = document.getElementById('dataEnd').value;
+  if(!s||!e){ document.getElementById('randomData').innerText='⚠️ Selectează ambele date!'; return; }
+  let sD = new Date(s), eD = new Date(e);
+  if(sD>eD){ document.getElementById('randomData').innerText='⚠️ Interval invalid!'; return; }
+  let r = new Date(sD.getTime() + Math.random()*(eD.getTime()-sD.getTime()));
+  ultimaData = r;
+  document.getElementById('randomData').innerText = 'Data aleasă: ' + formatDateDisplay(r);
+}
+function calculeazaPret(){
+  let pretI = parseFloat(document.getElementById('pretInitial').value);
+  let min = parseFloat(document.getElementById('variatieMin').value);
+  let max = parseFloat(document.getElementById('variatieMax').value);
+  if(isNaN(pretI)||isNaN(min)||isNaN(max)||min>max){ document.getElementById('randomPret').innerText='⚠️ Date invalide!'; return; }
+  let pct = Math.floor(Math.random()*(max-min+1))+min;
+  ultimulPretFinal = pretI*(1 + pct/100);
+  document.getElementById('randomPret').innerText = `Preț inițial: ${pretI.toFixed(2)} RON\nVariație: ${pct}%\nPreț final: ${ultimulPretFinal.toFixed(2)} RON`;
+}
+function calculeazaTotal(){
+  if(ultimulPretFinal===null){ document.getElementById('totalFinal').innerText='⚠️ Mai întâi calculează prețul final!'; return;}
+  if(ultimulNumarPasageri===null){ document.getElementById('totalFinal').innerText='⚠️ Mai întâi alege numărul de pasageri!'; return;}
+  let t = ultimulPretFinal * ultimulNumarPasageri;
+  document.getElementById('totalFinal').innerText = `Preț final/pasager: ${ultimulPretFinal.toFixed(2)} RON\nNumăr pasageri: ${ultimulNumarPasageri}\nCost total: ${t.toFixed(2)} RON`;
+}
+
+/* ---------- Tabel / CRUD ---------- */
+function afiseazaTabel(data=null){
+  const tbody = document.getElementById('tabelRezervari').querySelector('tbody');
+  tbody.innerHTML = '';
+  (data || rezervari).forEach((r, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.denumire}</td><td>${r.pasageri}</td><td>${r.data}</td><td>${r.pret.toFixed(2)} RON</td><td>${r.total.toFixed(2)} RON</td><td><button onclick="editeazaRand(${idx})">Editează</button> <button onclick="stergeRand(${idx})">Șterge</button></td>`;
+    tr.ondblclick = ()=> editeazaRand(idx);
+    tbody.appendChild(tr);
+  });
+}
+
+function adaugaRand(){
+  let den = ultimaDenumire || prompt("Introdu denumirea:");
+  let pas = (ultimulNumarPasageri !== null) ? ultimulNumarPasageri : parseInt(prompt("Introdu număr pasageri:"));
+  let pret = (ultimulPretFinal !== null) ? ultimulPretFinal : parseFloat(prompt("Introdu prețul final/pasager:"));
+  let dataVal = ultimaData ? formatDateDisplay(ultimaData) : prompt("Introdu data (zz/ll/aaaa):");
+  if(!den || isNaN(pas) || isNaN(pret) || !dataVal){ alert('Date incomplete.'); return; }
+  let total = pret * pas;
+  const row = { denumire: den, pasageri: pas, data: dataVal, pret: pret, total: total };
+  rezervari.push(row);
+  saveJSON('rezervari', rezervari);
+  aplicaFiltre();
+  updateStatsAndChart();
+}
+
+function stergeRand(i){
+  if(!confirm('Ștergi această rezervare?')) return;
+  rezervari.splice(i,1);
+  saveJSON('rezervari', rezervari);
+  aplicaFiltre();
+  updateStatsAndChart();
+}
+function stergeRaport(){
+  if(!confirm('Ești sigur că vrei să ștergi toate rezervările?')) return;
+  rezervari = [];
+  saveJSON('rezervari', rezervari);
+  aplicaFiltre();
+  updateStatsAndChart();
+}
+
+/* ---------- Editare rând ---------- */
+function editeazaRand(i){
+  const tbody = document.getElementById('tabelRezervari').querySelector('tbody');
+  const r = rezervari[i];
+  const tr = tbody.children[i];
+  tr.innerHTML = `
+    <td><input id="editDenumire${i}" value="${r.denumire}"></td>
+    <td><input id="editPas${i}" type="number" value="${r.pasageri}"></td>
+    <td><input id="editData${i}" type="date" value="${formatDataForInput(r.data)}"></td>
+    <td><input id="editPret${i}" type="number" step="0.01" value="${r.pret.toFixed(2)}"></td>
+    <td>${r.total.toFixed(2)} RON</td>
+    <td><button onclick="salveazaRand(${i})">Salvează</button> <button onclick="aplicaFiltre()">Anulează</button></td>
+  `;
+}
+function salveazaRand(i){
+  const den = document.getElementById(`editDenumire${i}`).value;
+  const pas = parseInt(document.getElementById(`editPas${i}`).value);
+  const dataVal = document.getElementById(`editData${i}`).value;
+  const pret = parseFloat(document.getElementById(`editPret${i}`).value);
+  if(!den || isNaN(pas) || !dataVal || isNaN(pret)){ alert('Completează corect!'); return; }
+  rezervari[i] = { denumire: den, pasageri: pas, data: formatDateDisplay(new Date(dataVal)), pret: pret, total: pret*pas };
+  saveJSON('rezervari', rezervari);
+  aplicaFiltre();
+  updateStatsAndChart();
+}
+
+/* ---------- Formatări dată ---------- */
+function pad(n){ return n.toString().padStart(2,'0'); }
+function formatDateDisplay(d){ if(!(d instanceof Date)) d = new Date(d); return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`; }
+function formatDataForInput(str){
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const p = str.split('/');
+  if(p.length===3) return `${p[2]}-${p[1]}-${p[0]}`;
+  return str;
+}
+
+/* ---------- Export Excel ---------- */
+function exportExcel(){
+  if(rezervari.length===0){ alert('Nicio rezervare de exportat.'); return; }
+  const ws = XLSX.utils.json_to_sheet(rezervari);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Rezervari');
+  const user = localStorage.getItem('currentUser') || 'guest';
+  XLSX.writeFile(wb, `rezervari_${user}.xlsx`);
+}
+
+/* ---------- Sortare toggle (date) ---------- */
+function toggleSortData(){
+  // sortare stabilă după data parse-ată; toggle asc/desc
+  rezervari.sort((a,b)=> parseData(a.data) - parseData(b.data));
+  if(!sortAsc) rezervari.reverse();
+  sortAsc = !sortAsc;
+  saveJSON('rezervari', rezervari);
+  aplicaFiltre();
+}
+
+/* parse date în mod tolerant (DD/MM/YYYY sau YYYY-MM-DD) */
+function parseData(s){
+  if(!s) return new Date(0);
+  if(s.includes('/')){ const p=s.split('/'); if(p.length===3) return new Date(p[2], p[1]-1, p[0]); }
+  if(s.includes('-')){ const p=s.split('-'); if(p.length===3) return new Date(p[0], p[1]-1, p[2]); }
+  const d = new Date(s); if(!isNaN(d)) return d;
+  return new Date(0);
+}
+
+/* ---------- Filtrare ---------- */
+function aplicaFiltre(){
+  const text = document.getElementById('filterDenumire').value.trim().toLowerCase();
+  const ds = document.getElementById('filterDataStart').value;
+  const de = document.getElementById('filterDataEnd').value;
+  const pmin = parseFloat(document.getElementById('filterPretMin').value);
+  const pmax = parseFloat(document.getElementById('filterPretMax').value);
+  const filtered = [];
+  rezervari.forEach((r, idx)=>{
+    const denMatch = r.denumire.toLowerCase().includes(text);
+    const d = parseData(r.data);
+    let dateOk = true;
+    if(ds){ const startD = new Date(ds); if(d < startD) dateOk = false; }
+    if(de){ const endD = new Date(de); if(d > endD) dateOk = false; }
+    let pretOk = true;
+    if(!isNaN(pmin) && r.pret < pmin) pretOk = false;
+    if(!isNaN(pmax) && r.pret > pmax) pretOk = false;
+    if(denMatch && dateOk && pretOk) filtered.push(r);
+  });
+  afiseazaTabel(filtered);
+  updateStatsAndChart(filtered);
+}
+function resetFiltre(){
+  document.getElementById('filterDenumire').value='';
+  document.getElementById('filterDataStart').value='';
+  document.getElementById('filterDataEnd').value='';
+  document.getElementById('filterPretMin').value='';
+  document.getElementById('filterPretMax').value='';
+  aplicaFiltre();
+}
+
+/* ---------- Statistici & Chart ---------- */
+function updateStatsAndChart(data=null){
+  const list = data || rezervari;
+  // stats
+  const totalRez = list.length;
+  const totalPas = list.reduce((s,r)=> s + (Number(r.pasageri)||0), 0);
+  const venitTotal = list.reduce((s,r)=> s + (Number(r.total)||0), 0);
+  const pretMed = (totalPas===0) ? 0 : (list.reduce((s,r)=> s + (Number(r.pret)*(Number(r.pasageri)||0) ),0) / totalPas);
+  const pasMed = totalRez===0 ? 0 : (totalPas / totalRez);
+  const maxRez = list.length ? list.reduce((a,b)=> a.total>b.total ? a : b) : null;
+
+  document.getElementById('statCount').innerText = totalRez;
+  document.getElementById('statPas').innerText = totalPas;
+  document.getElementById('statVenit').innerText = venitTotal.toFixed(2) + ' RON';
+  document.getElementById('statPretMed').innerText = pretMed.toFixed(2) + ' RON';
+  document.getElementById('statPasMed').innerText = pasMed.toFixed(2);
+  document.getElementById('statMax').innerText = maxRez ? `${maxRez.denumire} — ${maxRez.total.toFixed(2)} RON` : '-';
+
+  // chart: rezervări per zi (count) OR venit per zi — vom afișa venit per zi
+  const map = {};
+  list.forEach(r=>{
+    const d = parseData(r.data);
+    if(isNaN(d)) return;
+    const key = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    map[key] = (map[key]||0) + Number(r.total||0);
+  });
+  const labels = Object.keys(map).sort();
+  const dataVals = labels.map(l=>map[l]);
+
+  // create/update chart
+  const ctx = document.getElementById('chartRez').getContext('2d');
+  if(chart) {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = dataVals;
+    chart.update();
+  } else {
+    chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Venit (RON) pe zi',
+          data: dataVals,
+        }]
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+}
+
+/* ---------- Init ---------- */
+(function boot(){
+  // if no users exist, create a default demo user for convenience
+  let users = JSON.parse(localStorage.getItem('demo_users') || '[]');
+  if(users.length===0){ users.push({user:'demo', pass:'demo'}); localStorage.setItem('demo_users', JSON.stringify(users)); }
+  if(localStorage.getItem('currentUser')) initForUser();
+  else showLogin(true);
+})();
+</script>
+</body>
+</html>
